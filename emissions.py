@@ -11,6 +11,10 @@ DEFAULT_FACTORS_WTW = {
     "Bus|Diesel": 0.822,
     "Two-wheeler|Petrol": 0.070,
     "EV|Electricity": 0.050,
+    "12-Seater Traveller|Diesel" = 0.390,
+    "35-Seater Bus|Diesel" = 0.840,
+    "50-Seater Bus|Diesel" = 0.810,
+    "Bus|Diesel" = 0.810,
 }
 
 VEHICLE_MAP = [
