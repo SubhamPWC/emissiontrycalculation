@@ -18,7 +18,7 @@ DEFAULT_FACTORS_WTW = {
 }
 
 VEHICLE_MAP = [
-    (r"bus", "Bus"),
+    (r"bus|Bus", "Bus"),
     (r"hgv|truck|lorry", "Truck"),
     (r"van", "Van"),
     (r"bike|two|motor", "Two-wheeler"),
