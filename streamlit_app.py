@@ -9,7 +9,7 @@ from utils import parse_latlon, is_valid_coord, normalize_place_name
 
 st.set_page_config(page_title="Fleet Emission Tracker", layout="wide")
 
-# HEADER + STYLE (unchanged view)
+# HEADER style (unchanged)
 st.markdown(
     """
     <style>
@@ -26,11 +26,11 @@ st.markdown('<div class="titleband">Fleet Emission Tracker</div>', unsafe_allow_
 
 # SIDEBAR (unchanged)
 scope = st.sidebar.selectbox("Emission scope (WTW)", ["WTW"], index=0)
-profile = st.sidebar.selectbox("ORS profile", ["driving-car", "driving-hgv","driving-bus"], index=0)
+profile = st.sidebar.selectbox("ORS profile", ["driving-car", "driving-hgv"], index=0)
 country_bias = st.sidebar.text_input("Geocode country bias (ISO)", value="IN")
 city_hint = st.sidebar.text_input("City/Region hint (optional)", value="")
 
-# DATA INPUT (upload)
+# DATA INPUT
 st.subheader("Upload Fleet Activity CSV")
 _data_help = "Expected: Type of Asset(FROM), Type of vehicle, Location(TO), Type of fuel"
 file = st.file_uploader(_data_help, type=["csv"])
@@ -61,19 +61,19 @@ def auto_city_hint(a: str, b: str) -> str:
             return ct
     return city_hint.strip()
 
-# PIPELINE per row (view unchanged)
+# Pipeline per row (unchanged view)
 model = EmissionModel(scope=scope)
 rows = []
 for idx, row in df.iterrows():
     from_raw = str(row["Type of Asset"]).strip()
     to_raw   = str(row["Location"]).strip()
 
-    # 1) Geocode FROM (asset)
+    # 1) Geocode FROM
     from_txt = normalize_place_name(from_raw)
     hint = auto_city_hint(from_txt, to_raw) or None
     start = parse_latlon(from_txt) or client.geocode_best(from_txt, boundary_country=country_bias, city_hint=hint)
 
-    # 2) Geocode TO (location) using focus.point near FROM
+    # 2) Geocode TO using focus from FROM + boundary.circle
     focus = start if start and is_valid_coord(start) else None
     to_txt = normalize_place_name(to_raw)
     end   = parse_latlon(to_txt) or client.geocode_best(to_txt, boundary_country=country_bias, city_hint=hint, focus_pt=focus)
@@ -92,7 +92,7 @@ for idx, row in df.iterrows():
         })
         continue
 
-    # 3) Directions (road distance)
+    # 3) Road distance
     try:
         resp = client.directions(start, end, profile=profile)
         short_km, long_km = client.pick_short_long_distances(resp)
@@ -110,11 +110,11 @@ for idx, row in df.iterrows():
         })
         continue
 
-    # 4) Vehicle & fuel detection
+    # 4) Vehicle & fuel
     vtype = str(row["Type of vehicle"]).strip()
     fuel  = str(row["Type of fuel"]).strip()
 
-    # 5) Emission using Secrets WTW factor
+    # 5) Emissions
     emis_short = model.emissions(short_km, vtype, fuel)
     emis_long  = model.emissions(long_km,  vtype, fuel)
 
@@ -132,12 +132,12 @@ for idx, row in df.iterrows():
 
 res = pd.DataFrame(rows)
 
-# Ensure cols exist
+# Ensure columns
 for col in ["short_route_km", "long_route_km", "emissions_WTW_short_kg", "emissions_WTW_long_kg"]:
     if col not in res.columns:
         res[col] = None
 
-# KPIs + Panels + Charts (unchanged)
+# KPIs / Panels / Charts (unchanged)
 
 def safe_sum(col_name: str) -> float:
     if col_name not in res.columns:
@@ -191,8 +191,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
-chart_ready = res['short_route_km'].notna().any()
-if chart_ready:
+if res['short_route_km'].notna().any():
     c1 = alt.Chart(res.dropna(subset=['short_route_km'])).mark_bar().encode(
         x=alt.X('To (Location)', sort='-y', title='Destination'),
         y=alt.Y('short_route_km', title='Short route (km)'),
@@ -212,4 +211,4 @@ if res['emissions_WTW_short_kg'].notna().any():
 
 st.download_button("Download results (CSV)", data=res.to_csv(index=False), file_name="results.csv", mime="text/csv")
 
-st.caption("ORS Geocoding: search/structured/autocomplete with boundary.country & focus.point; ORS Directions returns meters (km converted). Coordinates [lon,lat].")
+st.caption("ORS Geocoding: search/structured/autocomplete with boundary.country + focus.point & boundary.circle near origin; ORS Directions meters→km; coords [lon,lat].")
