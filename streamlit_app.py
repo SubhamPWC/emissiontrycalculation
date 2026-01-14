@@ -157,7 +157,7 @@ with col2:
 with col3:
     st.markdown('<div class="kpi">Total Long Distance (km)<br><h3>'+f"{safe_sum('long_route_km'):.2f}"+'</h3></div>', unsafe_allow_html=True)
 with col4:
-    total_emis = safe_sum('emissions_WTW_short_kg') + safe_sum('emissions_WTW_long_kg')
+    total_emis = safe_sum('emissions_WTW_short_kg')
     st.markdown('<div class="kpi">Total Emissions (kg CO2e)<br><h3>'+f"{total_emis:.2f}"+'</h3></div>', unsafe_allow_html=True)
 
 st.divider()
