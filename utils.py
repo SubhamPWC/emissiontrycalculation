@@ -1,25 +1,34 @@
 
+
 import re
 from typing import Optional, Tuple
 
 COORD_RE = re.compile(r"^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$")
 
 ALIASES = {
-    # Common Bengaluru spellings & variants
     "katriguppe signal": "Kathriguppe Signal",
     "kathriguppe signal": "Kathriguppe Signal",
     "whitefield bus stop": "Whitefield Bus Stop",
     "yelahanka nes bus stop": "Yelahanka NES Bus Stop",
 }
 
+STOP_WORDS = ["bus stop", "busstand", "signal", "circle", "junction"]
+
 def normalize_place_name(text: str) -> str:
     t = re.sub(r"\s+", " ", str(text)).strip()
     low = t.lower()
     if low in ALIASES:
         return ALIASES[low]
-    # Normalize "BUS stop" variants and extra spaces/casing
+    # Normalize 'BUS stop' casing
     t = re.sub(r"BUS\s*stop", "Bus Stop", t, flags=re.I)
-    t = re.sub(r"stop", "Stop", t, flags=re.I)
+    return t
+
+
+def simplify_query(text: str) -> str:
+    t = str(text).lower()
+    for sw in STOP_WORDS:
+        t = t.replace(sw, "")
+    t = re.sub(r"\s+", " ", t).strip()
     return t
 
 
