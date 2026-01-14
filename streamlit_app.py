@@ -9,7 +9,7 @@ from utils import parse_latlon, is_valid_coord
 
 st.set_page_config(page_title="Fleet Emission Tracker", layout="wide")
 
-# THEME / HEADER
+# HEADER
 st.markdown(
     """
     <style>
@@ -52,7 +52,8 @@ if not api_key:
     st.stop()
 client = ORSClient(api_key=api_key)
 
-# Auto city hint detection from text (helps Pelias geocoder)
+# Auto city hint detection
+
 def auto_city_hint(a: str, b: str) -> str:
     s = f"{a} {b}".lower()
     for ct in ["bengaluru", "bangalore", "kolkata", "mumbai", "delhi", "hyderabad", "chennai", "pune"]:
@@ -60,21 +61,18 @@ def auto_city_hint(a: str, b: str) -> str:
             return ct
     return city_hint.strip()
 
-# PROCESS ROWS
+# PROCESS
 model = EmissionModel(scope=scope)
 rows = []
 for idx, row in df.iterrows():
-    from_txt = str(row["Type of Asset"]).strip()  # origin
-    to_txt = str(row["Location"]).strip()        # destination
+    from_txt = str(row["Type of Asset"]).strip()
+    to_txt   = str(row["Location"]).strip()
 
-    # Guess city hint if user didn't provide one
-    hint = auto_city_hint(from_txt, to_txt)
-    hint_val = hint if hint else None
+    hint = auto_city_hint(from_txt, to_txt) or None
 
-    start = parse_latlon(from_txt) or client.geocode_best(from_txt, boundary_country=country_bias, city_hint=hint_val)
-    end = parse_latlon(to_txt) or client.geocode_best(to_txt, boundary_country=country_bias, city_hint=hint_val)
+    start = parse_latlon(from_txt) or client.geocode_best(from_txt, boundary_country=country_bias, city_hint=hint)
+    end   = parse_latlon(to_txt)   or client.geocode_best(to_txt,   boundary_country=country_bias, city_hint=hint)
 
-    # Validate coordinates strictly
     if not (start and end and is_valid_coord(start) and is_valid_coord(end)):
         rows.append({
             "From (Asset)": from_txt,
@@ -90,7 +88,7 @@ for idx, row in df.iterrows():
         continue
 
     try:
-        resp = client.directions(start, end, profile=profile, request_alternatives=True)
+        resp = client.directions(start, end, profile=profile)
         short_km, long_km = client.pick_short_long_distances(resp)
     except Exception as e:
         rows.append({
@@ -107,10 +105,10 @@ for idx, row in df.iterrows():
         continue
 
     vtype = str(row["Type of vehicle"]).strip()
-    fuel = str(row["Type of fuel"]).strip()
+    fuel  = str(row["Type of fuel"]).strip()
 
     emis_short = model.emissions(short_km, vtype, fuel)
-    emis_long = model.emissions(long_km, vtype, fuel)
+    emis_long  = model.emissions(long_km,  vtype, fuel)
 
     rows.append({
         "From (Asset)": from_txt,
@@ -126,12 +124,13 @@ for idx, row in df.iterrows():
 
 res = pd.DataFrame(rows)
 
-# Ensure expected columns exist even if all rows errored
+# Ensure columns exist
 for col in ["short_route_km", "long_route_km", "emissions_WTW_short_kg", "emissions_WTW_long_kg"]:
     if col not in res.columns:
         res[col] = None
 
-# Safe helpers
+# Helpers
+
 def safe_sum(col_name: str) -> float:
     if col_name not in res.columns:
         return 0.0
@@ -142,7 +141,7 @@ def safe_count_nonnull(col_name: str) -> int:
         return 0
     return int(res[col_name].notna().sum())
 
-# KPI band
+# KPIs
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown('<div class="kpi">Total Trips<br><h3>'+str(safe_count_nonnull('short_route_km'))+'</h3></div>', unsafe_allow_html=True)
@@ -209,4 +208,4 @@ if res['emissions_WTW_short_kg'].notna().any():
 st.download_button("Download results (CSV)", data=res.to_csv(index=False), file_name="results.csv", mime="text/csv")
 
 # Footnotes
-st.caption("ORS Directions distances in meters; coords [lon,lat]; alternative routes requested for short/long. GHG Protocol distance-based method.")
+st.caption("ORS Geocoding & Directions; distances in meters (converted to km). Coordinates order [lon,lat]. Alternative routes derived via GET preferences if POST fails.")
