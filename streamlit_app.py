@@ -5,7 +5,7 @@ import streamlit as st
 import altair as alt
 from ors_client import ORSClient
 from emissions import EmissionModel
-from utils import parse_latlon, is_valid_coord
+from utils import parse_latlon, is_valid_coord, normalize_place_name
 
 st.set_page_config(page_title="Fleet Emission Tracker", layout="wide")
 
@@ -32,7 +32,7 @@ city_hint = st.sidebar.text_input("City/Region hint (optional)", value="")
 
 # DATA INPUT
 st.subheader("Upload Fleet Activity CSV")
-_data_help = "Expected columns: Type of Asset (FROM), Type of vehicle, Location (TO), Type of fuel"
+_data_help = "Expected: Type of Asset(FROM), Type of vehicle, Location(TO), Type of fuel"
 file = st.file_uploader(_data_help, type=["csv"])
 if not file:
     st.info("Please upload your CSV to proceed.")
@@ -52,7 +52,7 @@ if not api_key:
     st.stop()
 client = ORSClient(api_key=api_key)
 
-# Auto city hint detection
+# Auto city hint
 
 def auto_city_hint(a: str, b: str) -> str:
     s = f"{a} {b}".lower()
@@ -65,18 +65,25 @@ def auto_city_hint(a: str, b: str) -> str:
 model = EmissionModel(scope=scope)
 rows = []
 for idx, row in df.iterrows():
-    from_txt = str(row["Type of Asset"]).strip()
-    to_txt   = str(row["Location"]).strip()
+    from_raw = str(row["Type of Asset"]).strip()
+    to_raw   = str(row["Location"]).strip()
+
+    from_txt = normalize_place_name(from_raw)
+    to_txt   = normalize_place_name(to_raw)
 
     hint = auto_city_hint(from_txt, to_txt) or None
 
+    # Geocode FROM first
     start = parse_latlon(from_txt) or client.geocode_best(from_txt, boundary_country=country_bias, city_hint=hint)
-    end   = parse_latlon(to_txt)   or client.geocode_best(to_txt,   boundary_country=country_bias, city_hint=hint)
+
+    # Use start as focus point for TO
+    focus = start if start and is_valid_coord(start) else None
+    end   = parse_latlon(to_txt) or client.geocode_best(to_txt, boundary_country=country_bias, city_hint=hint, focus_pt=focus)
 
     if not (start and end and is_valid_coord(start) and is_valid_coord(end)):
         rows.append({
-            "From (Asset)": from_txt,
-            "To (Location)": to_txt,
+            "From (Asset)": from_raw,
+            "To (Location)": to_raw,
             "Type of vehicle": str(row.get("Type of vehicle", "")),
             "Type of fuel": str(row.get("Type of fuel", "")),
             "short_route_km": None,
@@ -92,8 +99,8 @@ for idx, row in df.iterrows():
         short_km, long_km = client.pick_short_long_distances(resp)
     except Exception as e:
         rows.append({
-            "From (Asset)": from_txt,
-            "To (Location)": to_txt,
+            "From (Asset)": from_raw,
+            "To (Location)": to_raw,
             "Type of vehicle": str(row.get("Type of vehicle", "")),
             "Type of fuel": str(row.get("Type of fuel", "")),
             "short_route_km": None,
@@ -111,8 +118,8 @@ for idx, row in df.iterrows():
     emis_long  = model.emissions(long_km,  vtype, fuel)
 
     rows.append({
-        "From (Asset)": from_txt,
-        "To (Location)": to_txt,
+        "From (Asset)": from_raw,
+        "To (Location)": to_raw,
         "Type of vehicle": vtype,
         "Type of fuel": fuel,
         "short_route_km": short_km,
@@ -124,7 +131,7 @@ for idx, row in df.iterrows():
 
 res = pd.DataFrame(rows)
 
-# Ensure columns exist
+# Ensure cols exist
 for col in ["short_route_km", "long_route_km", "emissions_WTW_short_kg", "emissions_WTW_long_kg"]:
     if col not in res.columns:
         res[col] = None
@@ -208,4 +215,4 @@ if res['emissions_WTW_short_kg'].notna().any():
 st.download_button("Download results (CSV)", data=res.to_csv(index=False), file_name="results.csv", mime="text/csv")
 
 # Footnotes
-st.caption("ORS Geocoding & Directions; distances in meters (converted to km). Coordinates order [lon,lat]. Alternative routes derived via GET preferences if POST fails.")
+st.caption("Geocoding uses focus.point bias near the origin when available; ORS Directions returns meters (converted to km). Coordinates order [lon,lat].")
