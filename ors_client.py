@@ -22,7 +22,6 @@ class ORSClient:
         if not q:
             return None
         url_search = f"{ORS_BASE}/geocode/search"
-        # Base params
         base = {"text": q, "size": 5, "layers": "venue,address,street,locality"}
         if boundary_country:
             base["boundary.country"] = boundary_country
@@ -36,7 +35,7 @@ class ORSClient:
                 return float(coords[0]), float(coords[1])
         except Exception as e:
             self._log(f"search failed: {e}")
-        # 2) search with city hint appended
+        # 2) search + city hint
         if city_hint:
             p2 = base.copy(); p2["text"] = f"{q}, {city_hint}"
             try:
@@ -75,6 +74,18 @@ class ORSClient:
                 return float(coords[0]), float(coords[1])
         except Exception as e:
             self._log(f"autocomplete failed: {e}")
+        # 5) simplified query fallback (remove stop words)
+        from utils import simplify_query
+        simp = simplify_query(q)
+        if simp and simp != q:
+            base2 = base.copy(); base2["text"] = simp
+            try:
+                r5 = requests.get(url_search, headers={"Authorization": self.api_key}, params=base2, timeout=30)
+                if r5.status_code == 200 and (r5.json().get("features") or []):
+                    coords = r5.json()["features"][0]["geometry"]["coordinates"]
+                    return float(coords[0]), float(coords[1])
+            except Exception as e:
+                self._log(f"search simplified failed: {e}")
         return None
 
     def directions(self, start: Tuple[float, float], end: Tuple[float, float], profile: str = "driving-car") -> Dict:
@@ -86,7 +97,6 @@ class ORSClient:
             return r.json()
         except Exception as e:
             self._log(f"POST directions failed: {e}. Falling back to GET.")
-            # GET fallback with two preferences
             out = {"routes": []}
             for pref in ("recommended", "shortest"):
                 params = {"start": f"{start[0]},{start[1]}", "end": f"{end[0]},{end[1]}", "preference": pref}
